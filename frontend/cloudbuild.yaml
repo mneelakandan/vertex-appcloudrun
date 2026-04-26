@@ -1,0 +1,72 @@
+# frontend/cloudbuild.yaml
+# 1. Reads the backend Cloud Run URL dynamically
+# 2. Injects it as build arg into Docker (bakes into React bundle)
+# 3. Deploys frontend to its own Cloud Run service
+
+substitutions:
+  _REGION:          asia-south1
+  _SERVICE:         vertex-app-frontend
+  _BACKEND_SERVICE: vertex-app-backend
+  _REPO:            vertex-app
+
+steps:
+  # ── Get backend URL dynamically ────────────────────────────────────────────
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: get-backend-url
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        BACKEND_URL=$(gcloud run services describe ${_BACKEND_SERVICE} \
+          --region=${_REGION} \
+          --project=$PROJECT_ID \
+          --format="value(status.url)")
+        echo "Backend URL: $BACKEND_URL"
+        echo "$BACKEND_URL" > /workspace/backend_url.txt
+
+  # ── Build frontend image with backend URL baked in ─────────────────────────
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        BACKEND_URL=$(cat /workspace/backend_url.txt)
+        docker build \
+          --build-arg REACT_APP_BACKEND_URL="$BACKEND_URL" \
+          -t ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA \
+          -t ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest \
+          .
+    waitFor: [get-backend-url]
+
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    args: [push, --all-tags, '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}']
+    waitFor: [build]
+
+  # ── Deploy frontend ────────────────────────────────────────────────────────
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --port=8080
+      - --cpu=1
+      - --memory=256Mi
+      - --min-instances=0
+      - --max-instances=20
+    waitFor: [push]
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
