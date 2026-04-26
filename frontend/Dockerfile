@@ -1,7 +1,7 @@
 # ── Stage 1: Build React app ──────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 
-WORKDIR /app
+WORKDIR /app/frontend
 
 # Install deps
 COPY package.json package-lock.json* ./
