@@ -10,8 +10,9 @@ RUN npm ci --prefer-offline
 # Build (REACT_APP_BACKEND_URL injected at build time via Cloud Build substitution)
 ARG REACT_APP_BACKEND_URL
 ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
-COPY public/ ./public/
-COPY src/     ./src/
+#COPY public/ ./public/
+#COPY src/     ./src/
+COPY . .
 RUN npm run build
 
 # ── Stage 2: Serve with nginx ─────────────────────────────────────────────────
